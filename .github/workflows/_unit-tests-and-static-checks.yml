@@ -1,0 +1,74 @@
+---
+name: Builds unit test binary and run unit tests, runs static rust code analysis
+
+on:
+  workflow_call:
+
+jobs:
+  clippy:
+    name: Run static checks (clippy)
+    runs-on: [self-hosted, Linux, X64, large]
+    env:
+      CARGO_INCREMENTAL: 0
+      RUSTC_WRAPPER: sccache
+    steps:
+      - name: Checkout Source code
+        uses: actions/checkout@v4
+
+      - name: Install Rust Toolchain
+        uses: Cardinal-Cryptography/github-actions/install-rust-toolchain@v6
+
+      - name: Run clippy
+        uses: actions-rs/cargo@v1
+        env:
+          # https://github.com/mozilla/sccache/issues/966
+          RUSTC_WRAPPER: ""
+          RUSTC_WORKSPACE_WRAPPER: sccache
+        with:
+          command: clippy
+          args: --all-targets --workspace --exclude baby-liminal-extension -- --no-deps -D warnings
+
+      # Run clippy for the chain extension: it requires a different setup.
+      - name: Run clippy for chain extension
+        working-directory: baby-liminal-extension
+        run: make clippy
+
+  unit-tests:
+    name: Run unit tests
+    runs-on: [self-hosted, Linux, X64, large]
+    env:
+      CARGO_INCREMENTAL: 0
+      RUSTC_WRAPPER: sccache
+    steps:
+      - name: Checkout Source code
+        uses: actions/checkout@v4
+
+      - name: Install Rust Toolchain
+        uses: Cardinal-Cryptography/github-actions/install-rust-toolchain@v6
+
+      - name: Run Unit Test Suite
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --workspace --exclude baby-liminal-extension -- --skip clique_network
+
+  unit-tests-chain-extension:
+    name: Run unit tests for chain extension
+    runs-on: [self-hosted, Linux, X64, large]
+    env:
+      CARGO_INCREMENTAL: 0
+      RUSTC_WRAPPER: sccache
+    steps:
+      - name: Checkout Source code
+        uses: actions/checkout@v4
+
+      - name: Install Nightly Rust Toolchain
+        uses: Cardinal-Cryptography/github-actions/install-rust-toolchain@v6
+        with:
+          channel: nightly-2024-02-14
+          targets: wasm32-unknown-unknown
+          components: rust-src
+
+      - name: Run unit tests for chain extension
+        working-directory: baby-liminal-extension
+        run: make test

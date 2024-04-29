@@ -1,0 +1,53 @@
+---
+#  This workflow builds production version of aleph-node and aleph-runtime
+name: Build production node and runtime
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: 'git ref: hash, branch, tag to build production aleph-node binary from'
+        type: string
+        required: true
+
+jobs:
+  main:
+    name: Build production node and runtime
+    runs-on: [self-hosted, Linux, X64, large]
+    env:
+      RUST_BACKTRACE: full
+      RUSTC_WRAPPER: sccache
+    steps:
+      - name: Checkout aleph-node source code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0
+
+      - name: Call action get-ref-properties
+        id: get-ref-properties
+        uses: Cardinal-Cryptography/github-actions/get-ref-properties@v6
+
+      - name: Install Rust toolchain
+        uses: Cardinal-Cryptography/github-actions/install-rust-toolchain@v6
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Build production binary and runtime
+        run: cargo build --profile production -p aleph-node
+
+      - name: Upload release binary to GH artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: aleph-production-node
+          path: target/production/aleph-node
+          if-no-files-found: error
+          retention-days: 7
+
+      # required by _check-runtime-determinism.yml workflow
+      - name: Upload release runtime to GH artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: aleph-production-runtime
+          path: target/production/wbuild/aleph-runtime/aleph_runtime.compact.compressed.wasm
+          if-no-files-found: error
+          retention-days: 7

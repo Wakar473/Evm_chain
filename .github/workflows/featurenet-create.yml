@@ -1,0 +1,147 @@
+---
+name: FE - Create
+
+on:
+  workflow_dispatch:
+    inputs:
+      featurenet-name:
+        description: 'Name of the featurenet'
+        type: string
+        required: true
+      ref:
+        description: "git ref: full commit hash, branch, tag - or 'mainnet' or 'testnet'"
+        type: string
+        required: true
+      expiration:
+        description: 'Time after which featurenet will be removed'
+        required: true
+        type: choice
+        options:
+          - 48h
+          - 24h
+          - 12h
+          - 3h
+          - 96h
+          - never
+        default: '48h'
+      validators:
+        description: 'Number of validators to start, from 0 to 50'
+        required: true
+        default: '5'
+        type: string
+      internal:
+        description: 'Internal network, accessible from VPN only'
+        required: true
+        type: boolean
+        default: false
+      short-session:
+        description: 'Use short session aleph-node binary'
+        required: true
+        type: boolean
+      sudo-account-id:
+        description: 'Sudo account ID'
+        type: string
+        required: false
+        default: '5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY'
+  workflow_call:
+    inputs:
+      featurenet-name:
+        description: 'Name of the featurenet'
+        type: string
+        required: true
+      ref:
+        description: "git ref: full commit hash, branch, tag - or 'mainnet' or 'testnet'"
+        type: string
+        required: true
+      expiration:
+        description: 'Time after which featurenet will be removed'
+        required: true
+        type: string
+        default: '48h'
+      validators:
+        description: 'Number of validators to start, from 0 to 50'
+        required: true
+        default: '5'
+        type: string
+      internal:
+        description: 'Internal network, accessible from VPN only'
+        required: true
+        type: boolean
+        default: false
+      short-session:
+        description: 'Use short session aleph-node binary'
+        required: true
+        type: boolean
+      sudo-account-id:
+        description: 'Sudo account ID'
+        type: string
+        required: false
+        default: '5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY'
+
+jobs:
+  validate-inputs:
+    name: Validate inputs
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Validate inputs
+        shell: bash
+        run: |
+          if [[ ! '${{ inputs.featurenet-name }}' =~ ^[a-z0-9][a-z0-9\-]{4,48}$ ]]; then
+            echo '!!! Invalid featurenet name'
+            exit 1
+          fi
+          if [[ ! '${{ inputs.ref }}' =~ ^[a-zA-Z0-9][a-zA-Z0-9\._\-]{1,48}$ ]]; then
+            echo "!!! Invalid ref"
+            exit 1
+          fi
+
+  check-vars-and-secrets:
+    name: Check vars and secrets
+    needs: [validate-inputs]
+    uses: ./.github/workflows/_check-vars-and-secrets.yml
+    secrets: inherit
+
+  get-full-docker-image-path:
+    name: Get full aleph-node full docker path path
+    needs: [check-vars-and-secrets]
+    runs-on: ubuntu-20.04
+    outputs:
+      fqdn-image: ${{ steps.get-aleph-node-fqdn-image.outputs.fqdn-image }}
+      ref: ${{ steps.get-aleph-node-fqdn-image.outputs.ref }}
+      image-exists: ${{ steps.get-aleph-node-fqdn-image.outputs.image-exists }}
+    steps:
+      - name: Get aleph-node fqdn path
+        id: get-aleph-node-fqdn-image
+        uses: Cardinal-Cryptography/github-actions/get-aleph-node-fqdn-image@v6
+        with:
+          ref: ${{ inputs.ref }}
+          test-binary: ${{ inputs.short-session == true && 'true' || 'false' }}
+          ecr-dev-node-repo: ${{ vars.ECR_DEV_ALEPH_NODE_REPO }}
+          ecr-prod-node-repo: ${{ vars.ECR_ALEPH_NODE_REPO }}
+
+  build-and-push-featurenet-node-image:
+    needs: [get-full-docker-image-path]
+    if: ${{ needs.get-full-docker-image-path.outputs.image-exists != 'true' }}
+    name: Build and push PR test docker image
+    uses: ./.github/workflows/_build-and-push-featurenet-node-image.yml
+    with:
+      ref: ${{ needs.get-full-docker-image-path.outputs.ref }}
+      fqdn-image: ${{ needs.get-full-docker-image-path.outputs.fqdn-image }}
+      short-session: ${{ inputs.short-session }}
+    secrets: inherit
+
+  create-featurenet:
+    needs: [get-full-docker-image-path, build-and-push-featurenet-node-image]
+    # to prevent this job to be skipped when on of the parent jobs is skipped
+    if: ${{ !cancelled() }}
+    name: Create featurenet
+    uses: Cardinal-Cryptography/github-actions/.github/workflows/_featurenet-create.yml@v6
+    secrets: inherit
+    with:
+      featurenet-name: ${{ inputs.featurenet-name }}
+      aleph-node-image: ${{ needs.get-full-docker-image-path.outputs.fqdn-image }}
+      validators: ${{ inputs.validators }}
+      expiration: ${{ inputs.expiration }}
+      internal: ${{ inputs.internal && true || false }}
+      delete-first: true
+      sudo-account-id: ${{ inputs.sudo-account-id }}
