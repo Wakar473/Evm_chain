@@ -18,6 +18,9 @@ members = [
     "primitives",
     "rate-limiter",
     "runtime-interfaces",
+    "evm/frame/precompiles",
+	"evm/frame/precompiles/macro",
+	# "precompiles/tests-external",
 ]
 
 exclude = [
@@ -137,6 +140,10 @@ sp-api = { git = "https://github.com/Cardinal-Cryptography/polkadot-sdk.git", br
 sp-application-crypto = { git = "https://github.com/Cardinal-Cryptography/polkadot-sdk.git", branch = "aleph-v1.5.0", default-features = false }
 sp-arithmetic = { git = "https://github.com/Cardinal-Cryptography/polkadot-sdk.git", branch = "aleph-v1.5.0", default-features = false }
 sp-blockchain = { git = "https://github.com/Cardinal-Cryptography/polkadot-sdk.git", branch = "aleph-v1.5.0", default-features = false }
+sp-weights = { git = "https://github.com/paritytech/polkadot-sdk", branch = "release-polkadot-v1.5.0", default-features = false }
+xcm = { package = "staging-xcm", git = "https://github.com/paritytech/polkadot-sdk", branch = "release-polkadot-v1.5.0", default-features = false }
+sp-core-hashing = { git = "https://github.com/paritytech/polkadot-sdk", branch = "release-polkadot-v1.5.0", default-features = false }
+
 sp-block-builder = { git = "https://github.com/Cardinal-Cryptography/polkadot-sdk.git", branch = "aleph-v1.5.0", default-features = false }
 sp-consensus = { git = "https://github.com/Cardinal-Cryptography/polkadot-sdk.git", branch = "aleph-v1.5.0", default-features = false }
 sp-consensus-aura = { git = "https://github.com/Cardinal-Cryptography/polkadot-sdk.git", branch = "aleph-v1.5.0", default-features = false }
@@ -177,6 +184,8 @@ aleph-runtime-interfaces = { path = "runtime-interfaces", default-features = fal
 baby-liminal-extension = { path = "baby-liminal-extension", default-features = false }
 finality-aleph = { path = "finality-aleph" }
 network-clique = { path = "clique" }
+impl-trait-for-tuples = "0.2.1"
+similar-asserts = "1.1.0"
 rate-limiter = { path = "rate-limiter" }
 pallet-aleph = { path = "pallets/aleph", default-features = false }
 pallet-committee-management = { path = "pallets/committee-management", default-features = false }
@@ -225,3 +234,4 @@ pallet-evm-precompile-sha3fips = { version = "2.0.0-dev", path = "evm/frame/evm/
 pallet-evm-precompile-simple = { version = "2.0.0-dev", path = "evm/frame/evm/precompile/simple", default-features = false }
 pallet-evm-test-vector-support = { version = "1.0.0-dev", path = "evm/frame/evm/test-vector-support" }
 pallet-hotfix-sufficients = { version = "1.0.0", path = "evm/frame/hotfix-sufficients", default-features = false }
+precompile-utils = { path = "evm/frame/precompiles", default-features = false }
