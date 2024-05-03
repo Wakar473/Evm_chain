@@ -43,6 +43,8 @@ sc-telemetry = { workspace = true }
 sc-transaction-pool = { workspace = true }
 sc-transaction-pool-api = { workspace = true }
 sp-application-crypto = { workspace = true }
+sp-inherents = { workspace = true, features = ["default"] }
+
 sp-arithmetic = { workspace = true }
 sp-block-builder = { workspace = true }
 sp-consensus = { workspace = true }
@@ -74,6 +76,20 @@ sc-rpc-api = { workspace = true }
 sp-api = { workspace = true }
 sp-blockchain = { workspace = true }
 
+fc-api = { workspace = true }
+fc-cli = { workspace = true }
+fc-consensus = { workspace = true }
+fc-db = { workspace = true }
+fc-mapping-sync = { workspace = true }
+fc-rpc = { workspace = true }
+fc-rpc-core = { workspace = true }
+fc-storage = { workspace = true }
+fp-account = { workspace = true }
+fp-dynamic-fee = { workspace = true, features = ["default"] }
+fp-evm = { workspace = true, features = ["default"] }
+fp-rpc = { workspace = true, features = ["default"] }
+
+
 substrate-frame-rpc-system = { workspace = true }
 pallet-transaction-payment-rpc = { workspace = true }
 
@@ -101,4 +117,5 @@ runtime-benchmarks = [
 only_legacy = [
     "finality-aleph/only_legacy"
 ]
+rpc-binary-search-estimate = ["fc-rpc/rpc-binary-search-estimate"]
 local-debugging = []

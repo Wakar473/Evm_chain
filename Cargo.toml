@@ -62,6 +62,11 @@ futures = { version = "0.3" }
 futures-timer = { version = "3.0" }
 hash-db = { version = "0.16", default-features = false }
 hex = { version = "0.4",default-features = false }
+clap = { workspace = true }
+kvdb-rocksdb = "0.19.0"
+parity-db = "0.4.12"
+sqlx = { version = "0.7.1", default-features = false, features = ["macros"] }
+
 hex-literal = { version = "0.3" }
 ink = { version = "5.0.0-rc", default-features = false }
 ip_network = { version = "0.4" }
@@ -135,14 +140,18 @@ sc-telemetry = { git = "https://github.com/Cardinal-Cryptography/polkadot-sdk.gi
 sc-transaction-pool = { git = "https://github.com/Cardinal-Cryptography/polkadot-sdk.git", branch = "aleph-v1.5.0" }
 sc-transaction-pool-api = { git = "https://github.com/Cardinal-Cryptography/polkadot-sdk.git", branch = "aleph-v1.5.0" }
 sc-utils = { git = "https://github.com/Cardinal-Cryptography/polkadot-sdk.git", branch = "aleph-v1.5.0" }
+sp-database = { git = "https://github.com/Cardinal-Cryptography/polkadot-sdk", branch = "aleph-v1.5.0" }
+sp-storage = { git = "https://github.com/Cardinal-Cryptography/polkadot-sdk", branch = "aleph-v1.5.0", default-features = false }
+sp-externalities = { git = "https://github.com/Cardinal-Cryptography/polkadot-sdk", branch = "aleph-v1.5.0", default-features = false }
 
 sp-api = { git = "https://github.com/Cardinal-Cryptography/polkadot-sdk.git", branch = "aleph-v1.5.0", default-features = false }
 sp-application-crypto = { git = "https://github.com/Cardinal-Cryptography/polkadot-sdk.git", branch = "aleph-v1.5.0", default-features = false }
 sp-arithmetic = { git = "https://github.com/Cardinal-Cryptography/polkadot-sdk.git", branch = "aleph-v1.5.0", default-features = false }
 sp-blockchain = { git = "https://github.com/Cardinal-Cryptography/polkadot-sdk.git", branch = "aleph-v1.5.0", default-features = false }
-sp-weights = { git = "https://github.com/paritytech/polkadot-sdk", branch = "release-polkadot-v1.5.0", default-features = false }
-xcm = { package = "staging-xcm", git = "https://github.com/paritytech/polkadot-sdk", branch = "release-polkadot-v1.5.0", default-features = false }
-sp-core-hashing = { git = "https://github.com/paritytech/polkadot-sdk", branch = "release-polkadot-v1.5.0", default-features = false }
+sp-weights = { git = "https://github.com/Cardinal-Cryptography/polkadot-sdk", branch = "aleph-v1.5.0", default-features = false }
+xcm = { package = "staging-xcm", git = "https://github.com/Cardinal-Cryptography/polkadot-sdk", branch = "aleph-v1.5.0", default-features = false }
+sp-core-hashing = { git = "https://github.com/Cardinal-Cryptography/polkadot-sdk", branch = "aleph-v1.5.0", default-features = false }
+sc-client-db = { git = "https://github.com/Cardinal-Cryptography/polkadot-sdk", branch = "aleph-v1.5.0", default-features = false }
 
 sp-block-builder = { git = "https://github.com/Cardinal-Cryptography/polkadot-sdk.git", branch = "aleph-v1.5.0", default-features = false }
 sp-consensus = { git = "https://github.com/Cardinal-Cryptography/polkadot-sdk.git", branch = "aleph-v1.5.0", default-features = false }
@@ -164,6 +173,7 @@ sp-timestamp = { git = "https://github.com/Cardinal-Cryptography/polkadot-sdk.gi
 sp-transaction-pool = { git = "https://github.com/Cardinal-Cryptography/polkadot-sdk.git", branch = "aleph-v1.5.0", default-features = false }
 sp-trie = { git = "https://github.com/Cardinal-Cryptography/polkadot-sdk.git", branch = "aleph-v1.5.0", default-features = false }
 sp-version = { git = "https://github.com/Cardinal-Cryptography/polkadot-sdk.git", branch = "aleph-v1.5.0", default-features = false }
+prometheus-endpoint = { package = "substrate-prometheus-endpoint", git = "https://github.com/Cardinal-Cryptography/polkadot-sdk", branch = "aleph-v1.5.0" }
 
 substrate-build-script-utils = { git = "https://github.com/Cardinal-Cryptography/polkadot-sdk.git", branch = "aleph-v1.5.0" }
 substrate-frame-rpc-system = { git = "https://github.com/Cardinal-Cryptography/polkadot-sdk.git", branch = "aleph-v1.5.0" }
@@ -210,6 +220,7 @@ fc-mapping-sync = { version = "2.0.0-dev", path = "evm/client/mapping-sync", def
 fc-rpc = { version = "2.0.0-dev", path = "evm/client/rpc", default-features = false }
 fc-rpc-core = { version = "1.1.0-dev", path = "evm/client/rpc-core" }
 fc-storage = { version = "1.0.0-dev", path = "evm/client/storage" }
+
 # Frontier Primitive
 fp-account = { version = "1.0.0-dev", path = "evm/primitives/account", default-features = false }
 fp-consensus = { version = "2.0.0-dev", path = "evm/primitives/consensus", default-features = false }
