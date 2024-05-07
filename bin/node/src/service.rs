@@ -150,7 +150,6 @@ pub fn new_partial(config: &Configuration) -> Result<ServiceComponents, ServiceE
     );
 
     let slot_duration = sc_consensus_aura::slot_duration(&*client)?;
-	let overrides = overrides_handle(client.clone());
 
     // DO NOT change Aura parameters without updating the finality-aleph sync accordingly,
     // in particular the code responsible for verifying incoming Headers, as it is supposed
