@@ -28,7 +28,8 @@ use sp_api::ProvideRuntimeApi;
 use sp_arithmetic::traits::BaseArithmetic;
 use sp_consensus::DisableProofRecording;
 use sp_consensus_aura::{sr25519::AuthorityPair as AuraPair, Slot};
-
+use aleph_runtime::TransactionConverter;
+use fc_storage::overrides_handle;
 use crate::{
     aleph_cli::AlephCli,
     chain_spec::DEFAULT_BACKUP_FOLDER,
@@ -93,6 +94,7 @@ fn backup_path(aleph_config: &AlephCli, base_path: &Path) -> Option<PathBuf> {
     }
 }
 
+
 pub fn new_partial(config: &Configuration) -> Result<ServiceComponents, ServiceError> {
     let telemetry = config
         .telemetry_endpoints
@@ -148,6 +150,7 @@ pub fn new_partial(config: &Configuration) -> Result<ServiceComponents, ServiceE
     );
 
     let slot_duration = sc_consensus_aura::slot_duration(&*client)?;
+	let overrides = overrides_handle(client.clone());
 
     // DO NOT change Aura parameters without updating the finality-aleph sync accordingly,
     // in particular the code responsible for verifying incoming Headers, as it is supposed
@@ -287,6 +290,8 @@ fn get_rate_limit_config(aleph_config: &AlephCli) -> RateLimiterConfig {
 /// Builds a new service for a full client.
 pub fn new_authority(
     config: Configuration,
+    eth_config: EthConfiguration::configuration,
+
     aleph_config: AlephCli,
 ) -> Result<TaskManager, ServiceError> {
     if aleph_config.external_addresses().is_empty() {
@@ -353,15 +358,65 @@ pub fn new_authority(
 
     let chain_status = SubstrateChainStatus::new(service_components.backend.clone())
         .map_err(|e| ServiceError::Other(format!("failed to set up chain status: {e}")))?;
+
     let validator_address_cache = get_validator_address_cache(&aleph_config);
+	let role = config.role.clone();
+    // let sync_service = sync_service.clone();
+	let overrides = overrides_handle(client.clone());
+
     let rpc_builder = {
+        let is_authority = role.is_authority();
+		let enable_dev_signer = eth_config.enable_dev_signer;
+		let sync_service = sync_network.clone();
+		let overrides = overrides.clone();
+        let block_data_cache = Arc::new(fc_rpc::EthBlockDataCacheTask::new(
+			task_manager.spawn_handle(),
+			overrides.clone(),
+			eth_config.eth_log_block_cache,
+			eth_config.eth_statuses_cache,
+			prometheus_registry.clone(),
+		));            let filter_pool = filter_pool.clone();
+            let max_past_logs = eth_config.max_past_logs;
+            let fee_history_cache = fee_history_cache.clone();
+            let execute_gas_limit_multiplier = eth_config.execute_gas_limit_multiplier;
+
+		let frontier_backend = frontier_backend.clone();
+
         let client = service_components.client.clone();
         let pool = service_components.transaction_pool.clone();
         let sync_oracle = sync_oracle.clone();
         let validator_address_cache = validator_address_cache.clone();
         let import_justification_tx = service_components.other.0.get_sender();
         let chain_status = chain_status.clone();
+
+
+
         Box::new(move |deny_unsafe, _| {
+            let eth_deps = crate::rpc::EthDeps {
+				client: client.clone(),
+				pool: pool.clone(),
+				graph: pool.pool().clone(),
+				converter: Some(TransactionConverter),
+				is_authority,
+				enable_dev_signer,
+				network: network.clone(),
+				sync: sync_service.clone(),
+				frontier_backend: match frontier_backend.clone() {
+					fc_db::Backend::KeyValue(b) => Arc::new(b),
+					fc_db::Backend::Sql(b) => Arc::new(b),
+				},
+				overrides: overrides.clone(),
+				block_data_cache: block_data_cache.clone(),
+				filter_pool: filter_pool.clone(),
+				max_past_logs,
+				fee_history_cache: fee_history_cache.clone(),
+				fee_history_cache_limit,
+				execute_gas_limit_multiplier,
+				forced_parent_hashes: None,
+				pending_create_inherent_data_providers,
+			};
+
+
             let deps = RpcFullDeps {
                 client: client.clone(),
                 pool: pool.clone(),
@@ -370,6 +425,7 @@ pub fn new_authority(
                 justification_translator: JustificationTranslator::new(chain_status.clone()),
                 sync_oracle: sync_oracle.clone(),
                 validator_address_cache: validator_address_cache.clone(),
+                eth:eth_deps,
             };
 
             Ok(create_full_rpc(deps)?)
