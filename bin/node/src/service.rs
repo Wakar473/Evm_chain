@@ -4,7 +4,10 @@ use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
-
+use futures::future;
+use sc_client_api::BlockchainEvents;
+use sc_client_api::Backend;
+use futures::StreamExt;
 use finality_aleph::{
     run_validator_node, AlephBlockImport, AlephConfig, AllBlockMetrics, BlockImporter,
     ChannelProvider, Justification, JustificationTranslator, MillisecsPerBlock,
@@ -12,13 +15,20 @@ use finality_aleph::{
     SessionPeriod, SubstrateChainStatus, SubstrateNetworkEventStream, SyncOracle,
     TracingBlockImport, ValidatorAddressCache,
 };
+use std::time::Duration;
+use fc_rpc::EthTask;
+use crate::rpc::*;
 use log::warn;
 use primitives::{
     fake_runtime_api::fake_runtime::RuntimeApi, AlephSessionApi, Block, MAX_BLOCK_SIZE,
 };
+use sc_network_sync::SyncingService;
 use sc_basic_authorship::ProposerFactory;
+use sp_core::U256;
 use sc_client_api::{BlockBackend, HeaderBackend};
 use sc_consensus::ImportQueue;
+use sc_executor::NativeExecutionDispatch;
+use sp_api::ConstructRuntimeApi;
 use sc_consensus_aura::{ImportQueueParams, SlotProportion, StartAuraParams};
 use sc_consensus_slots::BackoffAuthoringBlocksStrategy;
 use sc_network::config::FullNetworkConfiguration;
@@ -34,8 +44,14 @@ use crate::{
     aleph_cli::AlephCli,
     chain_spec::DEFAULT_BACKUP_FOLDER,
     executor::aleph_executor,
-    rpc::{create_full as create_full_rpc, FullDeps as RpcFullDeps},
+    rpc::{create_full as create_full_rpc, EthConfiguration, FullDeps as RpcFullDeps},
 };
+pub use fc_rpc_core::types::{FeeHistoryCache, FeeHistoryCacheLimit, FilterPool};
+
+
+pub fn db_config_dir(config: &Configuration) -> PathBuf {
+	config.base_path.config_dir(config.chain_spec.id())
+}
 
 type AlephExecutor = aleph_executor::Executor;
 type FullClient = sc_service::TFullClient<Block, RuntimeApi, AlephExecutor>;
@@ -43,6 +59,7 @@ type FullBackend = sc_service::TFullBackend<Block>;
 type FullSelectChain = sc_consensus::LongestChain<FullBackend, Block>;
 type FullPool = sc_transaction_pool::FullPool<Block, FullClient>;
 type FullImportQueue = sc_consensus::DefaultImportQueue<Block>;
+pub type FrontierBackend = fc_db::Backend<Block>;
 type FullProposerFactory = ProposerFactory<FullPool, FullClient, DisableProofRecording>;
 type ServiceComponents = sc_service::PartialComponents<
     FullClient,
@@ -52,10 +69,27 @@ type ServiceComponents = sc_service::PartialComponents<
     FullPool,
     (
         ChannelProvider<Justification>,
+        FrontierBackend,
+        Arc<fc_rpc::OverrideHandle<Block>>,
         Option<Telemetry>,
         AllBlockMetrics,
     ),
 >;
+
+
+pub trait EthCompatRuntimeApiCollection:
+	sp_api::ApiExt<Block>
+	+ fp_rpc::ConvertTransactionRuntimeApi<Block>
+	+ fp_rpc::EthereumRuntimeRPCApi<Block>
+{
+}
+
+impl<Api> EthCompatRuntimeApiCollection for Api where
+	Api: sp_api::ApiExt<Block>
+		+ fp_rpc::ConvertTransactionRuntimeApi<Block>
+		+ fp_rpc::EthereumRuntimeRPCApi<Block>
+{
+}
 
 struct LimitNonfinalized(u32);
 
@@ -94,8 +128,97 @@ fn backup_path(aleph_config: &AlephCli, base_path: &Path) -> Option<PathBuf> {
     }
 }
 
+pub async fn spawn_frontier_tasks<RuntimeApi, Executor>(
+	task_manager: &TaskManager,
+	client: Arc<FullClient>,
+	backend: Arc<FullBackend>,
+	frontier_backend: FrontierBackend,
+	filter_pool: Option<FilterPool>,
+	overrides: Arc<fc_rpc::OverrideHandle<Block>>,
+	fee_history_cache: FeeHistoryCache,
+	fee_history_cache_limit: FeeHistoryCacheLimit,
+	sync: Arc<SyncingService<Block>>,
+	pubsub_notification_sinks: Arc<
+		fc_mapping_sync::EthereumBlockNotificationSinks<
+			fc_mapping_sync::EthereumBlockNotification<Block>,
+		>,
+	>,
+) where
+	RuntimeApi: ConstructRuntimeApi<Block, FullClient>,
+	RuntimeApi: Send + Sync + 'static,
+	RuntimeApi::RuntimeApi: EthCompatRuntimeApiCollection,
+	Executor: NativeExecutionDispatch + 'static,
+{
+	// Spawn main mapping sync worker background task.
+	match frontier_backend {
+		fc_db::Backend::KeyValue(b) => {
+			task_manager.spawn_essential_handle().spawn(
+				"frontier-mapping-sync-worker",
+				Some("frontier"),
+				fc_mapping_sync::kv::MappingSyncWorker::new(
+					client.import_notification_stream(),
+					Duration::new(6, 0),
+					client.clone(),
+					backend,
+					overrides.clone(),
+					Arc::new(b),
+					3,
+					0,
+					fc_mapping_sync::SyncStrategy::Normal,
+					sync,
+					pubsub_notification_sinks,
+				)
+				.for_each(|()| future::ready(())),
+			);
+		}
+		fc_db::Backend::Sql(b) => {
+			task_manager.spawn_essential_handle().spawn_blocking(
+				"frontier-mapping-sync-worker",
+				Some("frontier"),
+				fc_mapping_sync::sql::SyncWorker::run(
+					client.clone(),
+					backend,
+					Arc::new(b),
+					client.import_notification_stream(),
+					fc_mapping_sync::sql::SyncWorkerConfig {
+						read_notification_timeout: Duration::from_secs(10),
+						check_indexed_blocks_interval: Duration::from_secs(60),
+					},
+					fc_mapping_sync::SyncStrategy::Parachain,
+					sync,
+					pubsub_notification_sinks,
+				),
+			);
+		}
+	}
 
-pub fn new_partial(config: &Configuration) -> Result<ServiceComponents, ServiceError> {
+	// Spawn Frontier EthFilterApi maintenance task.
+	if let Some(filter_pool) = filter_pool {
+		// Each filter is allowed to stay in the pool for 100 blocks.
+		const FILTER_RETAIN_THRESHOLD: u64 = 100;
+		task_manager.spawn_essential_handle().spawn(
+			"frontier-filter-pool",
+			Some("frontier"),
+			EthTask::filter_pool_task(client.clone(), filter_pool, FILTER_RETAIN_THRESHOLD),
+		);
+	}
+
+	// Spawn Frontier FeeHistory cache maintenance task.
+	task_manager.spawn_essential_handle().spawn(
+		"frontier-fee-history",
+		Some("frontier"),
+		EthTask::fee_history_task(
+			client,
+			overrides,
+			fee_history_cache,
+			fee_history_cache_limit,
+		),
+	);
+}
+
+
+
+pub fn new_partial(config: &Configuration,eth_config:EthConfiguration) -> Result<ServiceComponents, ServiceError> {
     let telemetry = config
         .telemetry_endpoints
         .clone()
@@ -178,6 +301,37 @@ pub fn new_partial(config: &Configuration) -> Result<ServiceComponents, ServiceE
         },
     )?;
 
+    let overrides = overrides_handle(client.clone());
+
+    let frontier_backend = match eth_config.frontier_backend_type {
+		BackendType::KeyValue => FrontierBackend::KeyValue(fc_db::kv::Backend::open(
+			Arc::clone(&client),
+			&config.database,
+			&db_config_dir(config),
+		)?),
+		BackendType::Sql => {
+			let db_path = db_config_dir(config).join("sql");
+			std::fs::create_dir_all(&db_path).expect("failed creating sql db directory");
+			let backend = futures::executor::block_on(fc_db::sql::Backend::new(
+				fc_db::sql::BackendConfig::Sqlite(fc_db::sql::SqliteBackendConfig {
+					path: Path::new("sqlite:///")
+						.join(db_path)
+						.join("frontier.db3")
+						.to_str()
+						.unwrap(),
+					create_if_missing: true,
+					thread_count: eth_config.frontier_sql_backend_thread_count,
+					cache_size: eth_config.frontier_sql_backend_cache_size,
+				}),
+				eth_config.frontier_sql_backend_pool_size,
+				std::num::NonZeroU32::new(eth_config.frontier_sql_backend_num_ops_timeout),
+				overrides.clone(),
+			))
+			.unwrap_or_else(|err| panic!("failed creating sql backend: {:?}", err));
+			FrontierBackend::Sql(backend)
+		}
+	};
+
     Ok(sc_service::PartialComponents {
         client,
         backend,
@@ -186,7 +340,7 @@ pub fn new_partial(config: &Configuration) -> Result<ServiceComponents, ServiceE
         keystore_container,
         select_chain,
         transaction_pool,
-        other: (justification_channel_provider, telemetry, metrics),
+        other: (justification_channel_provider, frontier_backend,overrides,telemetry, metrics),
     })
 }
 
@@ -286,18 +440,30 @@ fn get_rate_limit_config(aleph_config: &AlephCli) -> RateLimiterConfig {
     }
 }
 
+pub struct FrontierPartialComponents {
+	pub filter_pool: Option<FilterPool>,
+	pub fee_history_cache: FeeHistoryCache,
+	pub fee_history_cache_limit: FeeHistoryCacheLimit,
+}
+
 /// Builds a new service for a full client.
-pub fn new_authority(
+pub async fn new_authority<RuntimeApi,Executor>(
     config: Configuration,
-    eth_config: EthConfiguration::configuration,
+    eth_config: EthConfiguration,
 
     aleph_config: AlephCli,
-) -> Result<TaskManager, ServiceError> {
+) -> Result<TaskManager, ServiceError> 
+where 
+    RuntimeApi:ConstructRuntimeApi<Block,FullClient>,
+    RuntimeApi:Send + Sync + 'static,
+    Executor: sc_executor::NativeExecutionDispatch + 'static,
+    RuntimeApi::RuntimeApi: EthCompatRuntimeApiCollection,
+{
     if aleph_config.external_addresses().is_empty() {
         panic!("Cannot run a validator node without external addresses, stopping.");
     }
 
-    let mut service_components = new_partial(&config)?;
+    let mut service_components = new_partial(&config,eth_config.clone())?;
 
     let backup_path = backup_path(&aleph_config, config.base_path.path());
 
@@ -333,7 +499,7 @@ pub fn new_authority(
             justification_sync_link: (),
             block_proposal_slot_portion: SlotProportion::new(2f32 / 3f32),
             max_block_proposal_slot_portion: None,
-            telemetry: service_components.other.1.as_ref().map(|x| x.handle()),
+            telemetry: service_components.other.3.as_ref().map(|x| x.handle()),
             compatibility_mode: Default::default(),
         },
     )?;
@@ -359,17 +525,25 @@ pub fn new_authority(
         .map_err(|e| ServiceError::Other(format!("failed to set up chain status: {e}")))?;
 
     let validator_address_cache = get_validator_address_cache(&aleph_config);
+    let pubsub_notification_sinks: fc_mapping_sync::EthereumBlockNotificationSinks<
+    fc_mapping_sync::EthereumBlockNotification<Block>,
+> = Default::default();
+let pubsub_notification_sinks = Arc::new(pubsub_notification_sinks);
 	let role = config.role.clone();
-    // let sync_service = sync_service.clone();
-	let overrides = overrides_handle(client.clone());
+    let FrontierPartialComponents {
+		filter_pool,
+		fee_history_cache,
+		fee_history_cache_limit,
+	} = new_frontier_partial(&eth_config)?;
+    let sync_service = sync_network.clone();
 
     let rpc_builder = {
         let is_authority = role.is_authority();
 		let enable_dev_signer = eth_config.enable_dev_signer;
 		let sync_service = sync_network.clone();
-		let overrides = overrides.clone();
+		let overrides = service_components.other.2.clone();
         let block_data_cache = Arc::new(fc_rpc::EthBlockDataCacheTask::new(
-			task_manager.spawn_handle(),
+			service_components.task_manager.spawn_handle(),
 			overrides.clone(),
 			eth_config.eth_log_block_cache,
 			eth_config.eth_statuses_cache,
@@ -379,18 +553,30 @@ pub fn new_authority(
             let fee_history_cache = fee_history_cache.clone();
             let execute_gas_limit_multiplier = eth_config.execute_gas_limit_multiplier;
 
-		let frontier_backend = frontier_backend.clone();
-
+		let frontier_backend = service_components.other.1.clone();
+        let network = network.clone();
         let client = service_components.client.clone();
         let pool = service_components.transaction_pool.clone();
         let sync_oracle = sync_oracle.clone();
         let validator_address_cache = validator_address_cache.clone();
         let import_justification_tx = service_components.other.0.get_sender();
         let chain_status = chain_status.clone();
+        let pubsub_notification_sinks = pubsub_notification_sinks.clone();
+        let target_gas_price = eth_config.target_gas_price.clone();
+        let pending_create_inherent_data_providers = move |_, ()| async move {
+			let current = sp_timestamp::InherentDataProvider::from_system_time();
+			let next_slot = current.timestamp().as_millis() + slot_duration.as_millis();
+			let timestamp = sp_timestamp::InherentDataProvider::new(next_slot.into());
+			let slot = sp_consensus_aura::inherents::InherentDataProvider::from_timestamp_and_slot_duration(
+				*timestamp,
+				slot_duration,
+			);
+			let dynamic_fee = fp_dynamic_fee::InherentDataProvider(U256::from(target_gas_price));
+			Ok((slot, timestamp, dynamic_fee))
+		};
 
 
-
-        Box::new(move |deny_unsafe, _| {
+        Box::new(move |deny_unsafe, subscription_task_executor| {
             let eth_deps = crate::rpc::EthDeps {
 				client: client.clone(),
 				pool: pool.clone(),
@@ -427,7 +613,7 @@ pub fn new_authority(
                 eth:eth_deps,
             };
 
-            Ok(create_full_rpc(deps)?)
+            Ok(create_full_rpc(deps,subscription_task_executor,pubsub_notification_sinks.clone())?)
         })
     };
 
@@ -439,12 +625,26 @@ pub fn new_authority(
         task_manager: &mut service_components.task_manager,
         transaction_pool: service_components.transaction_pool.clone(),
         rpc_builder,
-        backend: service_components.backend,
+        backend: service_components.backend.clone(),
         system_rpc_tx,
         tx_handler_controller,
         config,
-        telemetry: service_components.other.1.as_mut(),
+        telemetry: service_components.other.3.as_mut(),
     })?;
+
+    spawn_frontier_tasks::<RuntimeApi,Executor>(
+		&service_components.task_manager,
+		service_components.client.clone(),
+		service_components.backend.clone(),
+		service_components.other.1,
+		filter_pool,
+		service_components.other.2,
+		fee_history_cache,
+		fee_history_cache_limit,
+		sync_service.clone(),
+		pubsub_notification_sinks,
+	)
+	.await;
 
     service_components
         .task_manager
@@ -475,7 +675,7 @@ pub fn new_authority(
         keystore: service_components.keystore_container.local_keystore(),
         justification_channel_provider: service_components.other.0,
         block_rx,
-        metrics: service_components.other.2,
+        metrics: service_components.other.4,
         registry: prometheus_registry,
         unit_creation_delay: aleph_config.unit_creation_delay(),
         backup_saving_path: backup_path,

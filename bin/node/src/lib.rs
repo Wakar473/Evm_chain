@@ -3,7 +3,7 @@ mod aleph_node_rpc;
 mod chain_spec;
 mod cli;
 mod config;
-mod executor;
+pub mod executor;
 mod resources;
 mod rpc;
 mod service;

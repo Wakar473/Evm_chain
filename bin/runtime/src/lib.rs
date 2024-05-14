@@ -290,6 +290,40 @@ impl fp_rpc::ConvertTransaction<UncheckedExtrinsic> for TransactionConverter {
 	}
 }
 
+pub mod opaque {
+	use super::*;
+
+	pub use sp_runtime::OpaqueExtrinsic as UncheckedExtrinsic;
+
+	// /// Opaque block header type.
+	// pub type Header = generic::Header<BlockNumber, BlakeTwo256>;
+	// /// Opaque block type.
+	// pub type Block = generic::Block<Header, UncheckedExtrinsic>;
+	// /// Opaque block identifier type.
+	// pub type BlockId = generic::BlockId<Block>;
+
+	// impl_opaque_keys! {
+	// 	pub struct SessionKeys {
+	// 		pub aura: Aura,
+	// 		pub grandpa: Grandpa,
+	// 	}
+	// }
+}
+
+impl fp_rpc::ConvertTransaction<opaque::UncheckedExtrinsic> for TransactionConverter {
+	fn convert_transaction(
+		&self,
+		transaction: pallet_ethereum::Transaction,
+	) -> opaque::UncheckedExtrinsic {
+		let extrinsic = UncheckedExtrinsic::new_unsigned(
+			pallet_ethereum::Call::<Runtime>::transact { transaction }.into(),
+		);
+		let encoded = extrinsic.encode();
+		opaque::UncheckedExtrinsic::decode(&mut &encoded[..])
+			.expect("Encoded extrinsic is always valid")
+	}
+}
+
 impl OnUnbalanced<NegativeImbalance> for EverythingToTheTreasury {
     fn on_unbalanceds<B>(mut fees_then_tips: impl Iterator<Item = NegativeImbalance>) {
         if let Some(fees) = fees_then_tips.next() {

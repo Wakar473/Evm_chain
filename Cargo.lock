@@ -275,6 +275,7 @@ version = "0.14.0+dev"
 dependencies = [
  "aleph-runtime",
  "aleph-runtime-interfaces",
+ "clap",
  "fc-api",
  "fc-cli",
  "fc-consensus",
@@ -7318,8 +7319,11 @@ dependencies = [
 name = "primitives"
 version = "0.14.0+dev"
 dependencies = [
+ "fp-rpc",
  "frame-support",
  "frame-system-rpc-runtime-api",
+ "pallet-ethereum",
+ "pallet-evm",
  "pallet-transaction-payment",
  "pallet-transaction-payment-rpc-runtime-api",
  "parity-scale-codec",

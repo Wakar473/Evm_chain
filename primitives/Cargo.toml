@@ -22,6 +22,11 @@ sp-consensus-aura = { workspace = true }
 
 frame-support = { workspace = true }
 frame-system-rpc-runtime-api = { workspace = true }
+fp-rpc = { version = "3.0.0-dev", path = "../evm/primitives/rpc", default-features = false }
+pallet-evm = { version = "6.0.0-dev", path = "../evm/frame/evm", default-features = false }
+pallet-ethereum = { version = "4.0.0-dev", path = "../evm/frame/ethereum", default-features = false }
+
+
 
 pallet-transaction-payment = { workspace = true }
 pallet-transaction-payment-rpc-runtime-api = { workspace = true }

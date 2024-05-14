@@ -8,14 +8,27 @@ use pallet_transaction_payment::FeeDetails;
 use pallet_transaction_payment_rpc_runtime_api::RuntimeDispatchInfo;
 use sp_consensus_aura::SlotDuration;
 use sp_core::OpaqueMetadata;
+use sp_core::H160;
+use sp_core::U256;
+use sp_core::H256;
 use sp_runtime::{
     traits::Block as BlockT,
     transaction_validity::{TransactionSource, TransactionValidity},
     ApplyExtrinsicResult,
 };
+pub use sp_runtime::{FixedPointNumber, Perbill, Permill};
+use crate::UncheckedExtrinsic;
+use pallet_ethereum::TransactionStatus;
+use pallet_ethereum::{
+	Call::transact, PostLogContent, Transaction as EthereumTransaction, TransactionAction,
+	TransactionData,
+};
+
 use sp_std::vec::Vec;
 use sp_version::RuntimeVersion;
-
+use pallet_evm::{
+	Account as EVMAccount, EnsureAddressTruncated, FeeCalculator, IdentityAddressMapping, Runner,
+};
 use crate::{
     AccountId, ApiError as AlephApiError, AuraId, AuthorityId as AlephId, Balance, Block, Nonce,
     SessionAuthorityData, SessionCommittee, SessionIndex, SessionValidatorError,
@@ -116,6 +129,103 @@ pub mod fake_runtime {
                 unimplemented!()
             }
         }
+
+        impl fp_rpc::ConvertTransactionRuntimeApi<Block> for Runtime {
+            fn convert_transaction(transaction: EthereumTransaction) -> <Block as BlockT>::Extrinsic {
+              unimplemented!()
+            }
+        }
+
+
+    impl fp_rpc::EthereumRuntimeRPCApi<Block> for Runtime {
+		fn chain_id() -> u64 {
+            unimplemented!()
+		}
+
+		fn account_basic(address: H160) -> EVMAccount {
+            unimplemented!()
+		}
+
+		fn gas_price() -> U256 {
+            unimplemented!()
+		}
+
+		fn account_code_at(address: H160) -> Vec<u8> {
+            unimplemented!()		}
+
+		fn author() -> H160 {
+            unimplemented!()		}
+
+		fn storage_at(address: H160, index: U256) -> H256 {
+            unimplemented!()
+		}
+
+		fn call(
+			from: H160,
+			to: H160,
+			data: Vec<u8>,
+			value: U256,
+			gas_limit: U256,
+			max_fee_per_gas: Option<U256>,
+			max_priority_fee_per_gas: Option<U256>,
+			nonce: Option<U256>,
+			estimate: bool,
+			access_list: Option<Vec<(H160, Vec<H256>)>>,
+		) -> Result<pallet_evm::CallInfo, sp_runtime::DispatchError> {
+            unimplemented!()
+		}
+
+		fn create(
+			from: H160,
+			data: Vec<u8>,
+			value: U256,
+			gas_limit: U256,
+			max_fee_per_gas: Option<U256>,
+			max_priority_fee_per_gas: Option<U256>,
+			nonce: Option<U256>,
+			estimate: bool,
+			access_list: Option<Vec<(H160, Vec<H256>)>>,
+		) -> Result<pallet_evm::CreateInfo, sp_runtime::DispatchError> {
+            unimplemented!()
+		}
+
+		fn current_transaction_statuses() -> Option<Vec<TransactionStatus>> {
+            unimplemented!()		}
+
+		fn current_block() -> Option<pallet_ethereum::Block> {
+            unimplemented!()		}
+
+		fn current_receipts() -> Option<Vec<pallet_ethereum::Receipt>> {
+            unimplemented!()		}
+
+		fn current_all() -> (
+			Option<pallet_ethereum::Block>,
+			Option<Vec<pallet_ethereum::Receipt>>,
+			Option<Vec<TransactionStatus>>
+		) {
+            unimplemented!()
+		}
+
+		fn extrinsic_filter(
+			xts: Vec<<Block as BlockT>::Extrinsic>,
+		) -> Vec<EthereumTransaction> {
+            unimplemented!()
+		}
+
+		fn elasticity() -> Option<Permill> {
+            unimplemented!()		}
+
+		fn gas_limit_multiplier_support() {
+            unimplemented!()
+        }
+
+		fn pending_block(
+			xts: Vec<<Block as BlockT>::Extrinsic>,
+		) -> (Option<pallet_ethereum::Block>, Option<Vec<TransactionStatus>>) {
+            unimplemented!()
+		}
+	}
+
 
         impl frame_system_rpc_runtime_api::AccountNonceApi<Block, AccountId, Nonce> for Runtime {
             fn account_nonce(_: AccountId) -> Nonce {

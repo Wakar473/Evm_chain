@@ -22,6 +22,7 @@ use sp_block_builder::BlockBuilder;
 use sp_blockchain::{Error as BlockChainError, HeaderBackend, HeaderMetadata};
 use sp_consensus::SyncOracle;
 use aleph_runtime::Hash;
+use crate::service::FrontierPartialComponents;
 use sp_core::H256;
 use sp_api::CallApiAt;
 use fp_rpc::ConvertTransactionRuntimeApi;
@@ -43,7 +44,8 @@ use fc_rpc_core::types::FeeHistoryCacheLimit;
 use parity_scale_codec::alloc::collections::BTreeMap;
 use sp_block_builder::BlockBuilder as BlockBuilderApi;
 use sp_inherents::CreateInherentDataProviders;
-
+use sc_service::{error::Error as ServiceError, Configuration, TaskManager};
+use std::sync::Mutex;
 pub struct DefaultEthConfig<C, BE>(std::marker::PhantomData<(C, BE)>);
 
 impl<C, BE> fc_rpc::EthConfig<Block, C> for DefaultEthConfig<C, BE>
@@ -253,6 +255,85 @@ where
 }
 
 
+/// Avalailable frontier backend types.
+#[derive(Debug, Copy, Clone, Default, clap::ValueEnum)]
+pub enum BackendType {
+	/// Either RocksDb or ParityDb as per inherited from the global backend settings.
+	#[default]
+	KeyValue,
+	/// Sql database with custom log indexing.
+	Sql,
+}
+
+
+/// The ethereum-compatibility configuration used to run a node.
+#[derive(Clone, Debug, clap::Parser)]
+pub struct EthConfiguration {
+	/// Maximum number of logs in a query.
+	#[arg(long, default_value = "10000")]
+	pub max_past_logs: u32,
+
+	/// Maximum fee history cache size.
+	#[arg(long, default_value = "2048")]
+	pub fee_history_limit: u64,
+
+	#[arg(long)]
+	pub enable_dev_signer: bool,
+
+	/// The dynamic-fee pallet target gas price set by block author
+	#[arg(long, default_value = "1")]
+	pub target_gas_price: u64,
+
+	/// Maximum allowed gas limit will be `block.gas_limit * execute_gas_limit_multiplier`
+	/// when using eth_call/eth_estimateGas.
+	#[arg(long, default_value = "10")]
+	pub execute_gas_limit_multiplier: u64,
+
+	/// Size in bytes of the LRU cache for block data.
+	#[arg(long, default_value = "50")]
+	pub eth_log_block_cache: usize,
+
+	/// Size in bytes of the LRU cache for transactions statuses data.
+	#[arg(long, default_value = "50")]
+	pub eth_statuses_cache: usize,
+
+	/// Sets the frontier backend type (KeyValue or Sql)
+	#[arg(long, value_enum, ignore_case = true, default_value_t = BackendType::default())]
+	pub frontier_backend_type: BackendType,
+
+	// Sets the SQL backend's pool size.
+	#[arg(long, default_value = "100")]
+	pub frontier_sql_backend_pool_size: u32,
+
+	/// Sets the SQL backend's query timeout in number of VM ops.
+	#[arg(long, default_value = "10000000")]
+	pub frontier_sql_backend_num_ops_timeout: u32,
+
+	/// Sets the SQL backend's auxiliary thread limit.
+	#[arg(long, default_value = "4")]
+	pub frontier_sql_backend_thread_count: u32,
+
+	/// Sets the SQL backend's query timeout in number of VM ops.
+	/// Default value is 200MB.
+	#[arg(long, default_value = "209715200")]
+	pub frontier_sql_backend_cache_size: u64,
+}
+
+// pub struct FrontierPartialComponents {
+// 	pub filter_pool: Option<FilterPool>,
+// 	pub fee_history_cache: FeeHistoryCache,
+// 	pub fee_history_cache_limit: FeeHistoryCacheLimit,
+// }
+
+pub fn new_frontier_partial(
+	config: &EthConfiguration,
+) -> Result<FrontierPartialComponents, ServiceError> {
+	Ok(FrontierPartialComponents {
+		filter_pool: Some(Arc::new(Mutex::new(BTreeMap::new()))),
+		fee_history_cache: Arc::new(Mutex::new(BTreeMap::new())),
+		fee_history_cache_limit: config.fee_history_limit,
+	})
+}
 
 /// Instantiate all full RPC extensions.
 pub fn create_full<C, P, BE, A, CT, SO,CIDP>(
@@ -308,15 +389,6 @@ where
 
     module.merge(TransactionPayment::new(client.clone()).into_rpc())?;
 
-	let mut io = RpcModule::new(());
-
-	// Ethereum compatibility RPCs
-	let io = create_eth::<_, _, _, _, _, _, _, DefaultEthConfig<C, BE>>(
-		io,
-		eth,
-		subscription_task_executor,
-		pubsub_notification_sinks,
-	)?;
 
 
     use crate::aleph_node_rpc::{AlephNode, AlephNodeApiServer};
@@ -330,6 +402,15 @@ where
         )
         .into_rpc(),
     )?;
+		// Ethereum compatibility RPCs
+		let module = create_eth::<_, _, _, _, _, _, _, DefaultEthConfig<C, BE>>(
+			module,
+			eth,
+			subscription_task_executor,
+			pubsub_notification_sinks,
+		)?;
+	
+	
 
     Ok(module)
 }

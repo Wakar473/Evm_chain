@@ -1,12 +1,30 @@
 use aleph_node::{new_authority, new_partial, Cli, ConfigValidator, Subcommand};
+use aleph_runtime::RuntimeApi;
 use log::info;
 use primitives::HEAP_PAGES;
 use sc_cli::{clap::Parser, SubstrateCli};
 use sc_network::config::Role;
 use sc_service::{Configuration, PartialComponents};
+// use aleph_node::executor::ExecutorDispatch;
 
 fn enforce_heap_pages(config: &mut Configuration) {
     config.default_heap_pages = Some(HEAP_PAGES);
+    
+}
+pub type HostFunctions = ();
+use sc_executor::NativeVersion;
+use sc_executor::NativeExecutionDispatch;
+pub struct TemplateRuntimeExecutor;
+impl NativeExecutionDispatch for TemplateRuntimeExecutor {
+	type ExtendHostFunctions = HostFunctions;
+
+	fn dispatch(method: &str, data: &[u8]) -> Option<Vec<u8>> {
+		aleph_runtime::api::dispatch(method, data)
+	}
+
+	fn native_version() -> NativeVersion {
+		aleph_runtime::native_version()
+	}
 }
 
 fn main() -> sc_cli::Result<()> {
@@ -26,7 +44,7 @@ fn main() -> sc_cli::Result<()> {
                     task_manager,
                     import_queue,
                     ..
-                } = new_partial(&config)?;
+                } =  new_partial(&config,cli.eth)?;
                 Ok((cmd.run(client, import_queue), task_manager))
             })
         }
@@ -37,7 +55,7 @@ fn main() -> sc_cli::Result<()> {
                     client,
                     task_manager,
                     ..
-                } = new_partial(&config)?;
+                } = new_partial(&config,cli.eth)?;
                 Ok((cmd.run(client, config.database), task_manager))
             })
         }
@@ -48,7 +66,7 @@ fn main() -> sc_cli::Result<()> {
                     client,
                     task_manager,
                     ..
-                } = new_partial(&config)?;
+                } = new_partial(&config,cli.eth)?;
                 Ok((cmd.run(client, config.chain_spec), task_manager))
             })
         }
@@ -60,7 +78,7 @@ fn main() -> sc_cli::Result<()> {
                     task_manager,
                     import_queue,
                     ..
-                } = new_partial(&config)?;
+                } = new_partial(&config,cli.eth)?;
                 Ok((cmd.run(client, import_queue), task_manager))
             })
         }
@@ -76,7 +94,7 @@ fn main() -> sc_cli::Result<()> {
                     task_manager,
                     backend,
                     ..
-                } = new_partial(&config)?;
+                } = new_partial(&config,cli.eth)?;
                 Ok((cmd.run(client, backend, None), task_manager))
             })
         }
@@ -130,13 +148,14 @@ fn main() -> sc_cli::Result<()> {
                 }
             })
         }
-        #[cfg(not(feature = "runtime-benchmarks"))]
+        #[cfg(not(feature = "runtime-benchmarks"))] 
         Some(Subcommand::Benchmark) => Err(
             "Benchmarking wasn't enabled when building the node. You can enable it with \
                     `--features runtime-benchmarks`."
                 .into(),
         ),
         None => {
+            
             let runner = cli.create_runner(&cli.run)?;
 
             config_validation_result.report();
@@ -159,7 +178,7 @@ fn main() -> sc_cli::Result<()> {
                     aleph_cli_config.set_dummy_external_addresses();
                 }
                 enforce_heap_pages(&mut config);
-                new_authority(config, aleph_cli_config).map_err(sc_cli::Error::Service)
+                new_authority::<RuntimeApi,TemplateRuntimeExecutor>(config, cli.eth,aleph_cli_config).await.map_err(sc_cli::Error::Service)
             })
         }
     }

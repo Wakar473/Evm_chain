@@ -55,6 +55,7 @@ sp-keystore = { workspace = true }
 sp-runtime = { workspace = true }
 sp-timestamp = { workspace = true }
 sp-transaction-pool = { workspace = true }
+clap = { version = "4.4.12", features = ["derive", "deprecated"] }
 
 pallet-staking = { workspace = true }
 try-runtime-cli = { workspace = true, optional = true }
@@ -97,7 +98,10 @@ pallet-transaction-payment-rpc = { workspace = true }
 substrate-build-script-utils = { workspace = true }
 
 [features]
-default = []
+default = [	"rocksdb",
+	"sql",
+	"rpc-binary-search-estimate",
+    ]
 short_session = [
     "aleph-runtime/short_session",
     "primitives/short_session",
@@ -119,3 +123,17 @@ only_legacy = [
 ]
 rpc-binary-search-estimate = ["fc-rpc/rpc-binary-search-estimate"]
 local-debugging = []
+sql = [
+	"fc-db/sql",
+	"fc-mapping-sync/sql",
+]
+
+rocksdb = [
+	"sc-cli/rocksdb",
+	"sc-service/rocksdb",
+	"fc-cli/rocksdb",
+	"fc-db/rocksdb",
+	"fc-mapping-sync/rocksdb",
+	"fc-rpc/rocksdb",
+	
+]

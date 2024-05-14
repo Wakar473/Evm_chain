@@ -22,6 +22,10 @@ pub struct Cli {
 
     #[command(flatten)]
     pub run: RunCmd,
+
+
+	#[command(flatten)]
+	pub eth: crate::rpc::EthConfiguration,
 }
 
 impl SubstrateCli for Cli {
