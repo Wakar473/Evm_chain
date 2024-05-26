@@ -76,7 +76,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Send Slack message
-        uses: Cardinal-Cryptography/github-actions/slack-notification@v6
+        uses: Cardinal-Cryptography/github-actions/slack-notification@v7
         with:
           notify-on: "always"
         env:
@@ -89,7 +89,7 @@ jobs:
     needs: [push-production-node-image-to-ecr]
     steps:
       - name: Send Slack message
-        uses: Cardinal-Cryptography/github-actions/slack-notification@v6
+        uses: Cardinal-Cryptography/github-actions/slack-notification@v7
         with:
           notify-on: "failure"
         env:
